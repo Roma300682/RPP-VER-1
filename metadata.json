@@ -1,0 +1,6 @@
+{
+  "name": "GenRPP AKL - Generator RPP SMK Akuntansi",
+  "description": "Generator otomatis RPP dan Modul Ajar Kurikulum Merdeka & Pembelajaran Mendalam berbasis AI hanya dari materi ajar khusus SMK Akuntansi dan Keuangan Lembaga (AKL) dengan fitur kustomisasi sekolah.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
