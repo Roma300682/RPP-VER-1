@@ -18,6 +18,7 @@ import {
   GenerateRPPRequest,
 } from './types/rpp';
 import { DEFAULT_IDENTITAS_SEKOLAH, DEFAULT_KUSTOMISASI } from './data/aklPresets';
+import { generateAklFallbackRpp } from './utils/aklCurriculumEngine';
 import { AlertCircle } from 'lucide-react';
 
 const STORAGE_KEY_DRAFTS = 'genrpp_akl_drafts';
@@ -116,29 +117,69 @@ export default function App() {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const res = await fetch('/api/generate-rpp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json.success || !json.data) {
-        throw new Error(json.error || 'Gagal menyusun RPP. Silakan coba kembali.');
+      // If Mode Kilat or if static hosting (Vercel without backend server), run client-side generator directly
+      if (request.modeKecepatan === 'kilat') {
+        const clientRpp = generateAklFallbackRpp(request);
+        const generatedData: ModulAjarData = {
+          ...clientRpp,
+          id: `rpp-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          kustomisasi: request.kustomisasi,
+        };
+        setCurrentRpp(generatedData);
+        saveDraftToStorage(generatedData);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setIsLoading(false);
+        return;
       }
 
-      const generatedData: ModulAjarData = {
-        ...json.data,
-        id: json.data.id || `rpp-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        kustomisasi: request.kustomisasi,
-      };
+      // Try API fetch for AI mode
+      try {
+        const res = await fetch('/api/generate-rpp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request),
+        });
 
-      setCurrentRpp(generatedData);
-      // Auto save to drafts
-      saveDraftToStorage(generatedData);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error('Server backend tidak tersedia di environment ini (HTML response).');
+        }
+
+        const json = await res.json();
+        if (!res.ok || !json.success || !json.data) {
+          throw new Error(json.error || 'Gagal menyusun RPP.');
+        }
+
+        const generatedData: ModulAjarData = {
+          ...json.data,
+          id: json.data.id || `rpp-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          kustomisasi: request.kustomisasi,
+        };
+
+        setCurrentRpp(generatedData);
+        saveDraftToStorage(generatedData);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (apiErr) {
+        // Fallback gracefully to client-side engine if server route is missing (e.g. Vercel static deployment)
+        console.warn('API route unavailable, falling back to client-side engine:', apiErr);
+        const clientRpp = generateAklFallbackRpp(request);
+        const generatedData: ModulAjarData = {
+          ...clientRpp,
+          id: `rpp-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          kustomisasi: request.kustomisasi,
+        };
+        setCurrentRpp(generatedData);
+        saveDraftToStorage(generatedData);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setNotification('Berhasil menyusun modul ajar (Mode Fallback Client-Side aktif di Vercel).');
+        setTimeout(() => setNotification(null), 4000);
+      }
     } catch (err: any) {
       console.error('Error generating RPP:', err);
       setErrorMessage(err.message || 'Terjadi gangguan saat memproses materi ajar.');
