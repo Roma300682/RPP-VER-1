@@ -46,6 +46,13 @@ export const SectionEditorModal: React.FC<SectionEditorModalProps> = ({
         }),
       });
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          'Layanan AI server tidak tersedia di hosting statis ini. Gunakan tombol "Edit Isi RPP" di dokumen untuk mengedit langsung secara manual.'
+        );
+      }
+
       const json = await res.json();
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Gagal meregenerasi bagian modul ajar.');

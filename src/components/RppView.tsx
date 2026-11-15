@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Download,
   Printer,
@@ -8,13 +8,12 @@ import {
   Sparkles,
   ArrowLeft,
   Save,
-  Layers,
   FileCheck2,
   Calendar,
-  BookOpen,
   Award,
   ClipboardList,
-  Building,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { ModulAjarData, PertemuanBelajar, RubrikIndikator } from '../types/rpp';
 import { exportRppToWord } from '../utils/wordExport';
@@ -26,6 +25,11 @@ interface RppViewProps {
   onOpenRegenerateModal: (sectionKey: string, sectionTitle: string, currentData: any) => void;
   onSaveToDrafts: () => void;
 }
+
+const inputClass =
+  'w-full px-2.5 py-1.5 border border-amber-300 bg-amber-50/30 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs text-slate-900 transition-colors';
+const textareaClass =
+  'w-full px-2.5 py-1.5 border border-amber-300 bg-amber-50/30 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs text-slate-900 leading-relaxed transition-colors';
 
 export const RppView: React.FC<RppViewProps> = ({
   rpp,
@@ -39,21 +43,310 @@ export const RppView: React.FC<RppViewProps> = ({
   const [copied, setCopied] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
-  // Editable local state
   const [data, setData] = useState<ModulAjarData>(rpp);
 
-  const handleFieldChange = (section: keyof ModulAjarData, field: string, value: any) => {
+  // Sync local state if rpp prop updates (e.g. from AI section regeneration or school settings modal)
+  useEffect(() => {
+    setData(rpp);
+  }, [rpp]);
+
+  const commitUpdate = (updater: (prev: ModulAjarData) => ModulAjarData) => {
     setData((prev) => {
       const updated = {
-        ...prev,
-        [section]: {
-          ...(prev[section] as any),
-          [field]: value,
-        },
+        ...updater(prev),
+        updatedAt: new Date().toISOString(),
       };
       onUpdateRpp(updated);
       return updated;
     });
+  };
+
+  const handleFieldChange = (section: keyof ModulAjarData, field: string, value: any) => {
+    commitUpdate((prev) => ({
+      ...prev,
+      [section]: {
+        ...(prev[section] as any),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleProfilDimensionToggle = (dimKey: string) => {
+    if (!isEditMode) return;
+    commitUpdate((prev) => ({
+      ...prev,
+      identifikasi: {
+        ...prev.identifikasi,
+        dimensiProfilLulusan: {
+          ...prev.identifikasi.dimensiProfilLulusan,
+          [dimKey]: !(prev.identifikasi.dimensiProfilLulusan as any)?.[dimKey],
+        },
+      },
+    }));
+  };
+
+  // Tujuan Pembelajaran list handlers
+  const handleTujuanChange = (idx: number, val: string) => {
+    commitUpdate((prev) => {
+      const next = [...prev.desainPembelajaran.tujuanPembelajaran];
+      next[idx] = val;
+      return {
+        ...prev,
+        desainPembelajaran: { ...prev.desainPembelajaran, tujuanPembelajaran: next },
+      };
+    });
+  };
+
+  const handleAddTujuan = () => {
+    commitUpdate((prev) => ({
+      ...prev,
+      desainPembelajaran: {
+        ...prev.desainPembelajaran,
+        tujuanPembelajaran: [
+          ...prev.desainPembelajaran.tujuanPembelajaran,
+          'Peserta didik mampu menyusun dan mengevaluasi hasil tugas pembelajaran dengan tepat.',
+        ],
+      },
+    }));
+  };
+
+  const handleRemoveTujuan = (idx: number) => {
+    commitUpdate((prev) => ({
+      ...prev,
+      desainPembelajaran: {
+        ...prev.desainPembelajaran,
+        tujuanPembelajaran: prev.desainPembelajaran.tujuanPembelajaran.filter((_, i) => i !== idx),
+      },
+    }));
+  };
+
+  // Pengalaman Belajar per pertemuan handlers
+  const handlePertemuanChange = (
+    pIdx: number,
+    updater: (m: PertemuanBelajar) => PertemuanBelajar
+  ) => {
+    commitUpdate((prev) => {
+      const next = prev.pengalamanBelajar.map((m, idx) => (idx === pIdx ? updater(m) : m));
+      return { ...prev, pengalamanBelajar: next };
+    });
+  };
+
+  // Asesmen handlers
+  const handleAsesmenField = (
+    jenis: 'asesmenAwal' | 'asesmenProses' | 'asesmenAkhir',
+    field: 'teknikDanInstrumen' | 'waktuPelaksanaan',
+    val: string
+  ) => {
+    commitUpdate((prev) => ({
+      ...prev,
+      asesmenPembelajaran: {
+        ...prev.asesmenPembelajaran,
+        [jenis]: {
+          ...prev.asesmenPembelajaran[jenis],
+          [field]: val,
+        },
+      },
+    }));
+  };
+
+  // Rubrik handlers
+  const handleRubrikChange = (rIdx: number, field: keyof RubrikIndikator, val: string) => {
+    commitUpdate((prev) => {
+      const next = prev.asesmenPembelajaran.rubrikPenilaian.map((r, i) =>
+        i === rIdx ? { ...r, [field]: val } : r
+      );
+      return {
+        ...prev,
+        asesmenPembelajaran: { ...prev.asesmenPembelajaran, rubrikPenilaian: next },
+      };
+    });
+  };
+
+  const handleAddRubrik = () => {
+    commitUpdate((prev) => ({
+      ...prev,
+      asesmenPembelajaran: {
+        ...prev.asesmenPembelajaran,
+        rubrikPenilaian: [
+          ...prev.asesmenPembelajaran.rubrikPenilaian,
+          {
+            kriteria: 'Kriteria Penilaian Tambahan',
+            sangatBaik: 'Menunjukkan penguasaan sangat baik dan menyeluruh.',
+            baik: 'Menunjukkan penguasaan baik sesuai standar.',
+            cukup: 'Memerlukan sedikit arahan dalam penyelesaian tugas.',
+            perluBimbingan: 'Memerlukan pendampingan intensif.',
+          },
+        ],
+      },
+    }));
+  };
+
+  const handleRemoveRubrik = (rIdx: number) => {
+    commitUpdate((prev) => ({
+      ...prev,
+      asesmenPembelajaran: {
+        ...prev.asesmenPembelajaran,
+        rubrikPenilaian: prev.asesmenPembelajaran.rubrikPenilaian.filter((_, i) => i !== rIdx),
+      },
+    }));
+  };
+
+  // LKPD handlers
+  const handleLkpdChange = (field: string, value: any) => {
+    commitUpdate((prev) => ({
+      ...prev,
+      lampiran: {
+        ...prev.lampiran,
+        lkpd: {
+          ...prev.lampiran.lkpd,
+          [field]: value,
+        },
+      },
+    }));
+  };
+
+  const handleLkpdListChange = (
+    listKey: 'petunjukPengerjaan' | 'soalAnalisis',
+    idx: number,
+    val: string
+  ) => {
+    commitUpdate((prev) => {
+      const next = [...(prev.lampiran.lkpd[listKey] || [])];
+      next[idx] = val;
+      return {
+        ...prev,
+        lampiran: {
+          ...prev.lampiran,
+          lkpd: { ...prev.lampiran.lkpd, [listKey]: next },
+        },
+      };
+    });
+  };
+
+  const handleLkpdListAdd = (listKey: 'petunjukPengerjaan' | 'soalAnalisis') => {
+    commitUpdate((prev) => ({
+      ...prev,
+      lampiran: {
+        ...prev.lampiran,
+        lkpd: {
+          ...prev.lampiran.lkpd,
+          [listKey]: [
+            ...(prev.lampiran.lkpd[listKey] || []),
+            listKey === 'petunjukPengerjaan'
+              ? 'Petunjuk tambahan pengerjaan.'
+              : 'Pertanyaan analisis tambahan.',
+          ],
+        },
+      },
+    }));
+  };
+
+  const handleLkpdListRemove = (listKey: 'petunjukPengerjaan' | 'soalAnalisis', idx: number) => {
+    commitUpdate((prev) => ({
+      ...prev,
+      lampiran: {
+        ...prev.lampiran,
+        lkpd: {
+          ...prev.lampiran.lkpd,
+          [listKey]: (prev.lampiran.lkpd[listKey] || []).filter((_, i) => i !== idx),
+        },
+      },
+    }));
+  };
+
+  const handleLkpdTableHeaderChange = (colIdx: number, val: string) => {
+    commitUpdate((prev) => {
+      const cols = [...(prev.lampiran.lkpd.tabelPengerjaan?.judulKolom || [])];
+      cols[colIdx] = val;
+      return {
+        ...prev,
+        lampiran: {
+          ...prev.lampiran,
+          lkpd: {
+            ...prev.lampiran.lkpd,
+            tabelPengerjaan: {
+              ...prev.lampiran.lkpd.tabelPengerjaan,
+              judulKolom: cols,
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const handleLkpdTableCellChange = (rIdx: number, cIdx: number, val: string) => {
+    commitUpdate((prev) => {
+      const rows = (prev.lampiran.lkpd.tabelPengerjaan?.barisPanduan || []).map((row, ri) =>
+        ri === rIdx ? row.map((cell, ci) => (ci === cIdx ? val : cell)) : row
+      );
+      return {
+        ...prev,
+        lampiran: {
+          ...prev.lampiran,
+          lkpd: {
+            ...prev.lampiran.lkpd,
+            tabelPengerjaan: {
+              ...prev.lampiran.lkpd.tabelPengerjaan,
+              barisPanduan: rows,
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const handleAddLkpdRow = () => {
+    commitUpdate((prev) => {
+      const colCount = prev.lampiran.lkpd.tabelPengerjaan?.judulKolom?.length || 5;
+      const newRow = Array.from({ length: colCount }, (_, i) => (i === 0 ? '-' : ''));
+      return {
+        ...prev,
+        lampiran: {
+          ...prev.lampiran,
+          lkpd: {
+            ...prev.lampiran.lkpd,
+            tabelPengerjaan: {
+              ...prev.lampiran.lkpd.tabelPengerjaan,
+              barisPanduan: [
+                ...(prev.lampiran.lkpd.tabelPengerjaan?.barisPanduan || []),
+                newRow,
+              ],
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const handleRemoveLkpdRow = (rIdx: number) => {
+    commitUpdate((prev) => ({
+      ...prev,
+      lampiran: {
+        ...prev.lampiran,
+        lkpd: {
+          ...prev.lampiran.lkpd,
+          tabelPengerjaan: {
+            ...prev.lampiran.lkpd.tabelPengerjaan,
+            barisPanduan: (prev.lampiran.lkpd.tabelPengerjaan?.barisPanduan || []).filter(
+              (_, i) => i !== rIdx
+            ),
+          },
+        },
+      },
+    }));
+  };
+
+  const handleDiferensiasiChange = (field: 'konten' | 'proses' | 'produk', val: string) => {
+    commitUpdate((prev) => ({
+      ...prev,
+      lampiran: {
+        ...prev.lampiran,
+        diferensiasi: {
+          ...prev.lampiran.diferensiasi,
+          [field]: val,
+        },
+      },
+    }));
   };
 
   const handleCopyText = () => {
@@ -61,6 +354,7 @@ export const RppView: React.FC<RppViewProps> = ({
 # RENCANA PELAKSANAAN PEMBELAJARAN (MODUL AJAR)
 # PEMBELAJARAN MENDALAM (KURIKULUM MERDEKA)
 Satuan Pendidikan: ${data.identitas.namaSatuanPendidikan}
+Guru Mata Pelajaran: ${data.identitas.namaGuru} (${data.identitas.nipGuru})
 Mata Pelajaran: ${data.identitas.mataPelajaran}
 Fase/Kelas: ${data.identitas.faseKelasSemester}
 Topik: ${data.identitas.topikPembelajaran}
@@ -70,6 +364,7 @@ Tahun Pelajaran: ${data.identitas.tahunPelajaran}
 ## 1. IDENTIFIKASI PEMBELAJARAN
 - Kesiapan Belajar: ${data.identifikasi.kesiapanBelajarMurid}
 - Gaya Belajar: ${data.identifikasi.minatDanGayaBelajar}
+- Latar Belakang: ${data.identifikasi.latarBelakangDanKebutuhanKhusus}
 - Jenis Pengetahuan: ${data.identifikasi.jenisPengetahuanMateri}
 - Relevansi Nyata: ${data.identifikasi.relevansiKehidupanNyata}
 
@@ -138,8 +433,14 @@ ${data.pengalamanBelajar
                 <span className="font-bold text-slate-900 text-sm sm:text-base line-clamp-1">
                   {data.identitas.topikPembelajaran}
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">
-                  Tersusun
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                    isEditMode
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-emerald-100 text-emerald-800'
+                  }`}
+                >
+                  {isEditMode ? 'Sedang Diedit' : 'Siap Unduh'}
                 </span>
               </div>
               <p className="text-xs text-slate-500">
@@ -151,14 +452,14 @@ ${data.pengalamanBelajar
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setIsEditMode(!isEditMode)}
-              className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
                 isEditMode
-                  ? 'bg-amber-100 border-amber-300 text-amber-900'
-                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                  ? 'bg-amber-500 border-amber-600 text-white shadow-xs hover:bg-amber-600'
+                  : 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
               }`}
             >
-              <Edit3 className="w-3.5 h-3.5" />
-              <span>{isEditMode ? 'Selesai Edit' : 'Mode Edit Teks'}</span>
+              {isEditMode ? <Check className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
+              <span>{isEditMode ? 'Selesai Edit' : 'Edit Isi RPP'}</span>
             </button>
 
             <button
@@ -219,7 +520,7 @@ ${data.pengalamanBelajar
             { id: 'lengkap', label: 'Dokumen Lengkap (Format Resmi)', icon: FileCheck2 },
             { id: 'pengalaman', label: 'Pengalaman Belajar (Deep Learning)', icon: Calendar },
             { id: 'asesmen', label: 'Asesmen & Rubrik 4 Skala', icon: Award },
-            { id: 'lkpd', label: 'LKPD Kasus Transaksi AKL', icon: ClipboardList },
+            { id: 'lkpd', label: 'LKPD & Lampiran', icon: ClipboardList },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -239,6 +540,24 @@ ${data.pengalamanBelajar
             );
           })}
         </div>
+
+        {/* Edit Mode Helper Banner */}
+        {isEditMode && (
+          <div className="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-900">
+            <div className="flex items-center space-x-2">
+              <Edit3 className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                <strong>Mode Edit Aktif:</strong> Ubah teks, tabel, tujuan, skenario pertemuan, rubrik, LKPD, maupun pengesahan langsung di bawah. Perubahan otomatis tersimpan sebelum Anda mengunduh Word (.doc) atau Cetak/PDF.
+              </span>
+            </div>
+            <button
+              onClick={() => setIsEditMode(false)}
+              className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] shrink-0 self-end sm:self-center"
+            >
+              Selesai Edit
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Document Body */}
@@ -249,10 +568,10 @@ ${data.pengalamanBelajar
             {data.identitas.namaSatuanPendidikan}
           </h2>
           <p className="text-xs sm:text-sm font-semibold text-blue-800">
-            PROGRAM KEAHLIAN AKUNTANSI DAN KEUANGAN LEMBAGA (AKL)
+            KURIKULUM MERDEKA • {data.identitas.mataPelajaran.toUpperCase()}
           </p>
           <p className="text-xs text-slate-600">
-            Tahun Pelajaran {data.identitas.tahunPelajaran} • Kurikulum Merdeka
+            Tahun Pelajaran {data.identitas.tahunPelajaran}
           </p>
         </div>
 
@@ -270,7 +589,7 @@ ${data.pengalamanBelajar
         </div>
 
         {/* ========================================================= */}
-        {/* TAB 1: DOKUMEN LENGKAP ATAU VIEW UMUM                    */}
+        {/* TAB 1: DOKUMEN LENGKAP ATAU PENGALAMAN BELAJAR            */}
         {/* ========================================================= */}
         {(activeTab === 'lengkap' || activeTab === 'pengalaman') && (
           <div className="space-y-6">
@@ -296,7 +615,7 @@ ${data.pengalamanBelajar
                             onChange={(e) =>
                               handleFieldChange('identitas', 'namaSatuanPendidikan', e.target.value)
                             }
-                            className="w-full p-1 border rounded"
+                            className={inputClass}
                           />
                         ) : (
                           data.identitas.namaSatuanPendidikan
@@ -305,33 +624,126 @@ ${data.pengalamanBelajar
                     </tr>
                     <tr className="border-b border-slate-200">
                       <td className="p-2.5 font-bold bg-slate-50 text-slate-700">
-                        Nama Guru Mata Pelajaran
+                        Nama & NIP Guru Mata Pelajaran
                       </td>
                       <td className="p-2.5 text-slate-800">
-                        {data.identitas.namaGuru} {data.identitas.nipGuru ? `(NIP: ${data.identitas.nipGuru})` : ''}
+                        {isEditMode ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              value={data.identitas.namaGuru}
+                              onChange={(e) =>
+                                handleFieldChange('identitas', 'namaGuru', e.target.value)
+                              }
+                              placeholder="Nama Guru"
+                              className={inputClass}
+                            />
+                            <input
+                              type="text"
+                              value={data.identitas.nipGuru}
+                              onChange={(e) =>
+                                handleFieldChange('identitas', 'nipGuru', e.target.value)
+                              }
+                              placeholder="NIP Guru"
+                              className={inputClass}
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            {data.identitas.namaGuru}{' '}
+                            {data.identitas.nipGuru ? `(NIP: ${data.identitas.nipGuru})` : ''}
+                          </>
+                        )}
                       </td>
                     </tr>
                     <tr className="border-b border-slate-200">
                       <td className="p-2.5 font-bold bg-slate-50 text-slate-700">Mata Pelajaran</td>
-                      <td className="p-2.5 text-slate-800 font-semibold">{data.identitas.mataPelajaran}</td>
+                      <td className="p-2.5 text-slate-800 font-semibold">
+                        {isEditMode ? (
+                          <input
+                            type="text"
+                            value={data.identitas.mataPelajaran}
+                            onChange={(e) =>
+                              handleFieldChange('identitas', 'mataPelajaran', e.target.value)
+                            }
+                            className={inputClass}
+                          />
+                        ) : (
+                          data.identitas.mataPelajaran
+                        )}
+                      </td>
                     </tr>
                     <tr className="border-b border-slate-200">
-                      <td className="p-2.5 font-bold bg-slate-50 text-slate-700">Fase / Kelas / Semester</td>
-                      <td className="p-2.5 text-slate-800">{data.identitas.faseKelasSemester}</td>
+                      <td className="p-2.5 font-bold bg-slate-50 text-slate-700">
+                        Fase / Kelas / Semester
+                      </td>
+                      <td className="p-2.5 text-slate-800">
+                        {isEditMode ? (
+                          <input
+                            type="text"
+                            value={data.identitas.faseKelasSemester}
+                            onChange={(e) =>
+                              handleFieldChange('identitas', 'faseKelasSemester', e.target.value)
+                            }
+                            className={inputClass}
+                          />
+                        ) : (
+                          data.identitas.faseKelasSemester
+                        )}
+                      </td>
                     </tr>
                     <tr className="border-b border-slate-200">
-                      <td className="p-2.5 font-bold bg-slate-50 text-slate-700">Topik Pembelajaran</td>
+                      <td className="p-2.5 font-bold bg-slate-50 text-slate-700">
+                        Topik Pembelajaran
+                      </td>
                       <td className="p-2.5 text-slate-800 font-bold text-blue-900">
-                        {data.identitas.topikPembelajaran}
+                        {isEditMode ? (
+                          <input
+                            type="text"
+                            value={data.identitas.topikPembelajaran}
+                            onChange={(e) =>
+                              handleFieldChange('identitas', 'topikPembelajaran', e.target.value)
+                            }
+                            className={inputClass}
+                          />
+                        ) : (
+                          data.identitas.topikPembelajaran
+                        )}
                       </td>
                     </tr>
                     <tr className="border-b border-slate-200">
                       <td className="p-2.5 font-bold bg-slate-50 text-slate-700">Alokasi Waktu</td>
-                      <td className="p-2.5 text-slate-800">{data.identitas.alokasiWaktu}</td>
+                      <td className="p-2.5 text-slate-800">
+                        {isEditMode ? (
+                          <input
+                            type="text"
+                            value={data.identitas.alokasiWaktu}
+                            onChange={(e) =>
+                              handleFieldChange('identitas', 'alokasiWaktu', e.target.value)
+                            }
+                            className={inputClass}
+                          />
+                        ) : (
+                          data.identitas.alokasiWaktu
+                        )}
+                      </td>
                     </tr>
                     <tr>
                       <td className="p-2.5 font-bold bg-slate-50 text-slate-700">Tahun Pelajaran</td>
-                      <td className="p-2.5 text-slate-800">{data.identitas.tahunPelajaran}</td>
+                      <td className="p-2.5 text-slate-800">
+                        {isEditMode ? (
+                          <input
+                            type="text"
+                            value={data.identitas.tahunPelajaran}
+                            onChange={(e) =>
+                              handleFieldChange('identitas', 'tahunPelajaran', e.target.value)
+                            }
+                            className={inputClass}
+                          />
+                        ) : (
+                          data.identitas.tahunPelajaran
+                        )}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -369,7 +781,7 @@ ${data.pengalamanBelajar
                         <td className="p-2.5 text-slate-800 leading-relaxed">
                           {isEditMode ? (
                             <textarea
-                              rows={2}
+                              rows={3}
                               value={data.identifikasi.kesiapanBelajarMurid}
                               onChange={(e) =>
                                 handleFieldChange(
@@ -378,7 +790,7 @@ ${data.pengalamanBelajar
                                   e.target.value
                                 )
                               }
-                              className="w-full p-1 border rounded"
+                              className={textareaClass}
                             />
                           ) : (
                             data.identifikasi.kesiapanBelajarMurid
@@ -401,7 +813,7 @@ ${data.pengalamanBelajar
                                   e.target.value
                                 )
                               }
-                              className="w-full p-1 border rounded"
+                              className={textareaClass}
                             />
                           ) : (
                             data.identifikasi.minatDanGayaBelajar
@@ -413,7 +825,22 @@ ${data.pengalamanBelajar
                           Latar Belakang & Kebutuhan Khusus
                         </td>
                         <td className="p-2.5 text-slate-800 leading-relaxed">
-                          {data.identifikasi.latarBelakangDanKebutuhanKhusus}
+                          {isEditMode ? (
+                            <textarea
+                              rows={2}
+                              value={data.identifikasi.latarBelakangDanKebutuhanKhusus}
+                              onChange={(e) =>
+                                handleFieldChange(
+                                  'identifikasi',
+                                  'latarBelakangDanKebutuhanKhusus',
+                                  e.target.value
+                                )
+                              }
+                              className={textareaClass}
+                            />
+                          ) : (
+                            data.identifikasi.latarBelakangDanKebutuhanKhusus
+                          )}
                         </td>
                       </tr>
                       <tr className="border-b border-slate-200">
@@ -421,15 +848,45 @@ ${data.pengalamanBelajar
                           Jenis Pengetahuan Materi
                         </td>
                         <td className="p-2.5 text-slate-800 leading-relaxed">
-                          {data.identifikasi.jenisPengetahuanMateri}
+                          {isEditMode ? (
+                            <textarea
+                              rows={3}
+                              value={data.identifikasi.jenisPengetahuanMateri}
+                              onChange={(e) =>
+                                handleFieldChange(
+                                  'identifikasi',
+                                  'jenisPengetahuanMateri',
+                                  e.target.value
+                                )
+                              }
+                              className={textareaClass}
+                            />
+                          ) : (
+                            data.identifikasi.jenisPengetahuanMateri
+                          )}
                         </td>
                       </tr>
                       <tr>
                         <td className="p-2.5 font-bold bg-slate-50 text-slate-700">
-                          Relevansi Materi dengan Kehidupan Nyata / Dunia Kerja AKL
+                          Relevansi Materi dengan Kehidupan Nyata / Dunia Kerja
                         </td>
                         <td className="p-2.5 text-slate-800 leading-relaxed">
-                          {data.identifikasi.relevansiKehidupanNyata}
+                          {isEditMode ? (
+                            <textarea
+                              rows={2}
+                              value={data.identifikasi.relevansiKehidupanNyata}
+                              onChange={(e) =>
+                                handleFieldChange(
+                                  'identifikasi',
+                                  'relevansiKehidupanNyata',
+                                  e.target.value
+                                )
+                              }
+                              className={textareaClass}
+                            />
+                          ) : (
+                            data.identifikasi.relevansiKehidupanNyata
+                          )}
                         </td>
                       </tr>
                     </tbody>
@@ -440,7 +897,13 @@ ${data.pengalamanBelajar
                 {data.kustomisasi.tampilkanProfilLulusan && (
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                     <span className="font-bold text-slate-800 block mb-2">
-                      Dimensi Profil Lulusan yang Ditargetkan:
+                      Dimensi Profil Lulusan yang Ditargetkan{' '}
+                      {isEditMode && (
+                        <span className="text-[11px] font-normal text-amber-700">
+                          (Klik kotak untuk memilih/menghapus centang)
+                        </span>
+                      )}
+                      :
                     </span>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {[
@@ -456,25 +919,48 @@ ${data.pengalamanBelajar
                         const isChecked =
                           (data.identifikasi.dimensiProfilLulusan as any)?.[dim.key] ?? false;
                         return (
-                          <div
+                          <button
+                            type="button"
                             key={dim.key}
-                            className={`flex items-center space-x-1.5 p-1.5 rounded-lg border ${
+                            onClick={() => handleProfilDimensionToggle(dim.key)}
+                            disabled={!isEditMode}
+                            className={`flex items-center space-x-1.5 p-1.5 rounded-lg border text-left transition-colors ${
                               isChecked
                                 ? 'bg-blue-50 border-blue-300 text-blue-900 font-semibold'
                                 : 'bg-white border-slate-200 text-slate-400'
-                            }`}
+                            } ${isEditMode ? 'cursor-pointer hover:border-amber-400' : 'cursor-default'}`}
                           >
                             <span className="text-xs">{isChecked ? '☑' : '☐'}</span>
                             <span className="text-[11px]">{dim.label}</span>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
-                    {data.identifikasi.dimensiProfilLulusanCatatan && (
-                      <p className="mt-2 text-[11px] text-slate-600 italic">
-                        <strong>Integrasi Aktivitas:</strong>{' '}
-                        {data.identifikasi.dimensiProfilLulusanCatatan}
-                      </p>
+                    {isEditMode ? (
+                      <div className="mt-2">
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Integrasi Aktivitas:
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={data.identifikasi.dimensiProfilLulusanCatatan || ''}
+                          onChange={(e) =>
+                            handleFieldChange(
+                              'identifikasi',
+                              'dimensiProfilLulusanCatatan',
+                              e.target.value
+                            )
+                          }
+                          className={textareaClass}
+                        />
+                      </div>
+                    ) : (
+                      data.identifikasi.dimensiProfilLulusanCatatan && (
+                        <p className="mt-2 text-[11px] text-slate-600 italic">
+                          <strong>Integrasi Aktivitas:</strong>{' '}
+                          {data.identifikasi.dimensiProfilLulusanCatatan}
+                        </p>
+                      )
                     )}
                   </div>
                 )}
@@ -520,7 +1006,7 @@ ${data.pengalamanBelajar
                                 e.target.value
                               )
                             }
-                            className="w-full p-1 border rounded"
+                            className={textareaClass}
                           />
                         ) : (
                           data.desainPembelajaran.capaianPembelajaran
@@ -533,22 +1019,71 @@ ${data.pengalamanBelajar
                           Lintas Disiplin Ilmu
                         </td>
                         <td className="p-2.5 text-slate-800">
-                          {data.desainPembelajaran.lintasDisiplinIlmu}
+                          {isEditMode ? (
+                            <textarea
+                              rows={2}
+                              value={data.desainPembelajaran.lintasDisiplinIlmu}
+                              onChange={(e) =>
+                                handleFieldChange(
+                                  'desainPembelajaran',
+                                  'lintasDisiplinIlmu',
+                                  e.target.value
+                                )
+                              }
+                              className={textareaClass}
+                            />
+                          ) : (
+                            data.desainPembelajaran.lintasDisiplinIlmu
+                          )}
                         </td>
                       </tr>
                     )}
                     <tr className="border-b border-slate-200">
-                      <td className="p-2.5 font-bold bg-slate-50 text-slate-700">
+                      <td className="p-2.5 font-bold bg-slate-50 text-slate-700 align-top">
                         Tujuan Pembelajaran
                       </td>
                       <td className="p-2.5 text-slate-800">
-                        <ol className="list-decimal pl-4 space-y-1">
-                          {data.desainPembelajaran.tujuanPembelajaran.map((tp, idx) => (
-                            <li key={idx} className="leading-relaxed">
-                              {tp}
-                            </li>
-                          ))}
-                        </ol>
+                        {isEditMode ? (
+                          <div className="space-y-2">
+                            {data.desainPembelajaran.tujuanPembelajaran.map((tp, idx) => (
+                              <div key={idx} className="flex items-start space-x-1.5">
+                                <span className="font-bold text-slate-500 pt-1.5 w-5 shrink-0">
+                                  {idx + 1}.
+                                </span>
+                                <textarea
+                                  rows={2}
+                                  value={tp}
+                                  onChange={(e) => handleTujuanChange(idx, e.target.value)}
+                                  className={textareaClass}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveTujuan(idx)}
+                                  className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg mt-0.5"
+                                  title="Hapus tujuan"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={handleAddTujuan}
+                              className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Tambah Tujuan Pembelajaran</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <ol className="list-decimal pl-4 space-y-1">
+                            {data.desainPembelajaran.tujuanPembelajaran.map((tp, idx) => (
+                              <li key={idx} className="leading-relaxed">
+                                {tp}
+                              </li>
+                            ))}
+                          </ol>
+                        )}
                       </td>
                     </tr>
                     <tr className="border-b border-slate-200">
@@ -556,7 +1091,22 @@ ${data.pengalamanBelajar
                         Topik Pembelajaran Kontekstual
                       </td>
                       <td className="p-2.5 text-slate-800 font-medium">
-                        {data.desainPembelajaran.topikPembelajaranKontekstual}
+                        {isEditMode ? (
+                          <textarea
+                            rows={2}
+                            value={data.desainPembelajaran.topikPembelajaranKontekstual}
+                            onChange={(e) =>
+                              handleFieldChange(
+                                'desainPembelajaran',
+                                'topikPembelajaranKontekstual',
+                                e.target.value
+                              )
+                            }
+                            className={textareaClass}
+                          />
+                        ) : (
+                          data.desainPembelajaran.topikPembelajaranKontekstual
+                        )}
                       </td>
                     </tr>
                     <tr className="border-b border-slate-200">
@@ -564,7 +1114,22 @@ ${data.pengalamanBelajar
                         Praktik Pedagogis (Model)
                       </td>
                       <td className="p-2.5 text-slate-800 font-semibold text-blue-900">
-                        {data.desainPembelajaran.praktikPedagogis}
+                        {isEditMode ? (
+                          <input
+                            type="text"
+                            value={data.desainPembelajaran.praktikPedagogis}
+                            onChange={(e) =>
+                              handleFieldChange(
+                                'desainPembelajaran',
+                                'praktikPedagogis',
+                                e.target.value
+                              )
+                            }
+                            className={inputClass}
+                          />
+                        ) : (
+                          data.desainPembelajaran.praktikPedagogis
+                        )}
                       </td>
                     </tr>
                     {data.kustomisasi.tampilkanKemitraanDudi && (
@@ -573,7 +1138,22 @@ ${data.pengalamanBelajar
                           Kemitraan Pembelajaran (DUDI / Industri)
                         </td>
                         <td className="p-2.5 text-slate-800">
-                          {data.desainPembelajaran.kemitraanPembelajaran}
+                          {isEditMode ? (
+                            <textarea
+                              rows={2}
+                              value={data.desainPembelajaran.kemitraanPembelajaran}
+                              onChange={(e) =>
+                                handleFieldChange(
+                                  'desainPembelajaran',
+                                  'kemitraanPembelajaran',
+                                  e.target.value
+                                )
+                              }
+                              className={textareaClass}
+                            />
+                          ) : (
+                            data.desainPembelajaran.kemitraanPembelajaran
+                          )}
                         </td>
                       </tr>
                     )}
@@ -582,16 +1162,46 @@ ${data.pengalamanBelajar
                         Lingkungan Pembelajaran
                       </td>
                       <td className="p-2.5 text-slate-800">
-                        {data.desainPembelajaran.lingkunganPembelajaran}
+                        {isEditMode ? (
+                          <textarea
+                            rows={2}
+                            value={data.desainPembelajaran.lingkunganPembelajaran}
+                            onChange={(e) =>
+                              handleFieldChange(
+                                'desainPembelajaran',
+                                'lingkunganPembelajaran',
+                                e.target.value
+                              )
+                            }
+                            className={textareaClass}
+                          />
+                        ) : (
+                          data.desainPembelajaran.lingkunganPembelajaran
+                        )}
                       </td>
                     </tr>
                     {data.kustomisasi.tampilkanPemanfaatanDigital && (
                       <tr>
                         <td className="p-2.5 font-bold bg-slate-50 text-slate-700">
-                          Pemanfaatan Digital (Software Akuntansi)
+                          Pemanfaatan Digital
                         </td>
                         <td className="p-2.5 text-slate-800">
-                          {data.desainPembelajaran.pemanfaatanDigital}
+                          {isEditMode ? (
+                            <textarea
+                              rows={2}
+                              value={data.desainPembelajaran.pemanfaatanDigital}
+                              onChange={(e) =>
+                                handleFieldChange(
+                                  'desainPembelajaran',
+                                  'pemanfaatanDigital',
+                                  e.target.value
+                                )
+                              }
+                              className={textareaClass}
+                            />
+                          ) : (
+                            data.desainPembelajaran.pemanfaatanDigital
+                          )}
                         </td>
                       </tr>
                     )}
@@ -627,22 +1237,58 @@ ${data.pengalamanBelajar
               </div>
 
               <div className="space-y-6">
-                {data.pengalamanBelajar.map((m) => (
+                {data.pengalamanBelajar.map((m, pIdx) => (
                   <div key={m.pertemuanKe} className="avoid-break">
-                    <div className="bg-blue-50/70 border border-blue-200 px-3 py-2 rounded-t-xl flex justify-between items-center">
-                      <span className="font-bold text-xs text-blue-900">
-                        Pertemuan ke-{m.pertemuanKe} ({m.alokasiWaktu})
-                      </span>
-                      <span className="text-[11px] font-medium text-blue-700 bg-white px-2 py-0.5 rounded-md border border-blue-200">
-                        Fokus: {m.fokusMateri}
-                      </span>
+                    <div className="bg-blue-50/70 border border-blue-200 px-3 py-2 rounded-t-xl flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                      {isEditMode ? (
+                        <div className="flex flex-wrap items-center gap-2 w-full">
+                          <span className="font-bold text-xs text-blue-900">
+                            Pertemuan ke-{m.pertemuanKe}
+                          </span>
+                          <input
+                            type="text"
+                            value={m.alokasiWaktu}
+                            onChange={(e) =>
+                              handlePertemuanChange(pIdx, (prev) => ({
+                                ...prev,
+                                alokasiWaktu: e.target.value,
+                              }))
+                            }
+                            placeholder="Alokasi Waktu"
+                            className="px-2 py-1 border border-amber-300 bg-white rounded text-xs w-36"
+                          />
+                          <input
+                            type="text"
+                            value={m.fokusMateri}
+                            onChange={(e) =>
+                              handlePertemuanChange(pIdx, (prev) => ({
+                                ...prev,
+                                fokusMateri: e.target.value,
+                              }))
+                            }
+                            placeholder="Fokus Materi Pertemuan"
+                            className="px-2 py-1 border border-amber-300 bg-white rounded text-xs flex-1 min-w-48"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <span className="font-bold text-xs text-blue-900">
+                            Pertemuan ke-{m.pertemuanKe} ({m.alokasiWaktu})
+                          </span>
+                          <span className="text-[11px] font-medium text-blue-700 bg-white px-2 py-0.5 rounded-md border border-blue-200">
+                            Fokus: {m.fokusMateri}
+                          </span>
+                        </>
+                      )}
                     </div>
 
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs border border-slate-300 border-collapse">
                         <thead>
                           <tr className="bg-slate-100 text-slate-700 text-left border-b border-slate-300">
-                            <th className="p-2.5 w-1/4 border-r border-slate-300">Tahap Pembelajaran</th>
+                            <th className="p-2.5 w-1/4 border-r border-slate-300">
+                              Tahap Pembelajaran
+                            </th>
                             <th className="p-2.5 w-3/5 border-r border-slate-300">
                               Kegiatan Pembelajaran Berkesadaran & Bermakna
                             </th>
@@ -656,13 +1302,51 @@ ${data.pengalamanBelajar
                               Awal: Salam, Doa, Presensi
                             </td>
                             <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top">
-                              {m.tahapAwal.salamDoaPresensi}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={2}
+                                  value={m.tahapAwal.salamDoaPresensi}
+                                  onChange={(e) =>
+                                    handlePertemuanChange(pIdx, (prev) => ({
+                                      ...prev,
+                                      tahapAwal: {
+                                        ...prev.tahapAwal,
+                                        salamDoaPresensi: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                m.tahapAwal.salamDoaPresensi
+                              )}
                             </td>
                             <td
                               rowSpan={3}
                               className="p-2.5 text-center font-bold text-slate-600 bg-slate-50/50 align-top"
                             >
-                              {m.tahapAwal.alokasiWaktuMenit} mnt
+                              {isEditMode ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={m.tahapAwal.alokasiWaktuMenit}
+                                    onChange={(e) =>
+                                      handlePertemuanChange(pIdx, (prev) => ({
+                                        ...prev,
+                                        tahapAwal: {
+                                          ...prev.tahapAwal,
+                                          alokasiWaktuMenit: Number(e.target.value) || 0,
+                                        },
+                                      }))
+                                    }
+                                    className="w-14 px-1.5 py-1 border border-amber-300 bg-white rounded text-center text-xs"
+                                  />
+                                  <span className="text-[10px]">menit</span>
+                                </div>
+                              ) : (
+                                `${m.tahapAwal.alokasiWaktuMenit} mnt`
+                              )}
                             </td>
                           </tr>
                           <tr className="border-b border-slate-200">
@@ -670,7 +1354,24 @@ ${data.pengalamanBelajar
                               Awal: Apersepsi & Pertanyaan Pemantik
                             </td>
                             <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top font-medium text-indigo-900">
-                              {m.tahapAwal.apersepsiDanPemantik}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={2}
+                                  value={m.tahapAwal.apersepsiDanPemantik}
+                                  onChange={(e) =>
+                                    handlePertemuanChange(pIdx, (prev) => ({
+                                      ...prev,
+                                      tahapAwal: {
+                                        ...prev.tahapAwal,
+                                        apersepsiDanPemantik: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                m.tahapAwal.apersepsiDanPemantik
+                              )}
                             </td>
                           </tr>
                           <tr className="border-b border-slate-200">
@@ -678,7 +1379,24 @@ ${data.pengalamanBelajar
                               Awal: Penyampaian Tujuan & Ice Breaking
                             </td>
                             <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top">
-                              {m.tahapAwal.penyampaianTujuanIceBreaking}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={2}
+                                  value={m.tahapAwal.penyampaianTujuanIceBreaking}
+                                  onChange={(e) =>
+                                    handlePertemuanChange(pIdx, (prev) => ({
+                                      ...prev,
+                                      tahapAwal: {
+                                        ...prev.tahapAwal,
+                                        penyampaianTujuanIceBreaking: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                m.tahapAwal.penyampaianTujuanIceBreaking
+                              )}
                             </td>
                           </tr>
 
@@ -692,25 +1410,80 @@ ${data.pengalamanBelajar
                               Inti: Memahami
                             </td>
                             <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top leading-relaxed">
-                              {m.tahapInti.memahami}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={3}
+                                  value={m.tahapInti.memahami}
+                                  onChange={(e) =>
+                                    handlePertemuanChange(pIdx, (prev) => ({
+                                      ...prev,
+                                      tahapInti: {
+                                        ...prev.tahapInti,
+                                        memahami: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                m.tahapInti.memahami
+                              )}
                             </td>
                             <td
                               rowSpan={3}
                               className="p-2.5 text-center font-bold text-slate-700 bg-blue-50/50 align-top"
                             >
-                              {m.tahapInti.alokasiWaktuMenit} mnt
+                              {isEditMode ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={m.tahapInti.alokasiWaktuMenit}
+                                    onChange={(e) =>
+                                      handlePertemuanChange(pIdx, (prev) => ({
+                                        ...prev,
+                                        tahapInti: {
+                                          ...prev.tahapInti,
+                                          alokasiWaktuMenit: Number(e.target.value) || 0,
+                                        },
+                                      }))
+                                    }
+                                    className="w-14 px-1.5 py-1 border border-amber-300 bg-white rounded text-center text-xs"
+                                  />
+                                  <span className="text-[10px]">menit</span>
+                                </div>
+                              ) : (
+                                `${m.tahapInti.alokasiWaktuMenit} mnt`
+                              )}
                             </td>
                           </tr>
                           <tr className="border-b border-slate-200 bg-blue-50/30">
                             <td className="p-2.5 font-bold text-blue-900 border-r border-slate-200 align-top">
                               <span className="inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] mb-1">
-                                Praktik AKL
+                                Praktik
                               </span>
                               <br />
                               Inti: Mengaplikasi
                             </td>
                             <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top leading-relaxed font-serif">
-                              {m.tahapInti.mengaplikasi}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={3}
+                                  value={m.tahapInti.mengaplikasi}
+                                  onChange={(e) =>
+                                    handlePertemuanChange(pIdx, (prev) => ({
+                                      ...prev,
+                                      tahapInti: {
+                                        ...prev.tahapInti,
+                                        mengaplikasi: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                m.tahapInti.mengaplikasi
+                              )}
                             </td>
                           </tr>
                           <tr className="border-b border-slate-200 bg-blue-50/30">
@@ -722,7 +1495,24 @@ ${data.pengalamanBelajar
                               Inti: Merefleksi
                             </td>
                             <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top leading-relaxed">
-                              {m.tahapInti.merefleksi}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={3}
+                                  value={m.tahapInti.merefleksi}
+                                  onChange={(e) =>
+                                    handlePertemuanChange(pIdx, (prev) => ({
+                                      ...prev,
+                                      tahapInti: {
+                                        ...prev.tahapInti,
+                                        merefleksi: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                m.tahapInti.merefleksi
+                              )}
                             </td>
                           </tr>
 
@@ -732,13 +1522,51 @@ ${data.pengalamanBelajar
                               Penutup: Kesimpulan & Refleksi
                             </td>
                             <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top">
-                              {m.tahapPenutup.kesimpulanDanRefleksi}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={2}
+                                  value={m.tahapPenutup.kesimpulanDanRefleksi}
+                                  onChange={(e) =>
+                                    handlePertemuanChange(pIdx, (prev) => ({
+                                      ...prev,
+                                      tahapPenutup: {
+                                        ...prev.tahapPenutup,
+                                        kesimpulanDanRefleksi: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                m.tahapPenutup.kesimpulanDanRefleksi
+                              )}
                             </td>
                             <td
                               rowSpan={2}
                               className="p-2.5 text-center font-bold text-slate-600 bg-slate-50/50 align-top"
                             >
-                              {m.tahapPenutup.alokasiWaktuMenit} mnt
+                              {isEditMode ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={m.tahapPenutup.alokasiWaktuMenit}
+                                    onChange={(e) =>
+                                      handlePertemuanChange(pIdx, (prev) => ({
+                                        ...prev,
+                                        tahapPenutup: {
+                                          ...prev.tahapPenutup,
+                                          alokasiWaktuMenit: Number(e.target.value) || 0,
+                                        },
+                                      }))
+                                    }
+                                    className="w-14 px-1.5 py-1 border border-amber-300 bg-white rounded text-center text-xs"
+                                  />
+                                  <span className="text-[10px]">menit</span>
+                                </div>
+                              ) : (
+                                `${m.tahapPenutup.alokasiWaktuMenit} mnt`
+                              )}
                             </td>
                           </tr>
                           <tr>
@@ -746,7 +1574,24 @@ ${data.pengalamanBelajar
                               Penutup: Umpan Balik & Doa
                             </td>
                             <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top">
-                              {m.tahapPenutup.umpanBalikTindakLanjutDoa}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={2}
+                                  value={m.tahapPenutup.umpanBalikTindakLanjutDoa}
+                                  onChange={(e) =>
+                                    handlePertemuanChange(pIdx, (prev) => ({
+                                      ...prev,
+                                      tahapPenutup: {
+                                        ...prev.tahapPenutup,
+                                        umpanBalikTindakLanjutDoa: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                m.tahapPenutup.umpanBalikTindakLanjutDoa
+                              )}
                             </td>
                           </tr>
                         </tbody>
@@ -789,44 +1634,55 @@ ${data.pengalamanBelajar
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 text-left border-b border-slate-300">
                       <th className="p-2.5 w-1/4 border-r border-slate-300">Jenis Asesmen</th>
-                      <th className="p-2.5 w-7/12 border-r border-slate-300">Teknik dan Instrumen</th>
+                      <th className="p-2.5 w-7/12 border-r border-slate-300">
+                        Teknik dan Instrumen
+                      </th>
                       <th className="p-2.5 w-1/6 text-center">Waktu Pelaksanaan</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="border-b border-slate-200">
-                      <td className="p-2.5 font-bold bg-slate-50 text-slate-700 border-r border-slate-200">
-                        Asesmen Awal (Diagnostik)
-                      </td>
-                      <td className="p-2.5 text-slate-800 border-r border-slate-200">
-                        {data.asesmenPembelajaran.asesmenAwal.teknikDanInstrumen}
-                      </td>
-                      <td className="p-2.5 text-center text-slate-600 font-medium">
-                        {data.asesmenPembelajaran.asesmenAwal.waktuPelaksanaan}
-                      </td>
-                    </tr>
-                    <tr className="border-b border-slate-200">
-                      <td className="p-2.5 font-bold bg-slate-50 text-slate-700 border-r border-slate-200">
-                        Asesmen Proses (Formatif)
-                      </td>
-                      <td className="p-2.5 text-slate-800 border-r border-slate-200">
-                        {data.asesmenPembelajaran.asesmenProses.teknikDanInstrumen}
-                      </td>
-                      <td className="p-2.5 text-center text-slate-600 font-medium">
-                        {data.asesmenPembelajaran.asesmenProses.waktuPelaksanaan}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="p-2.5 font-bold bg-slate-50 text-slate-700 border-r border-slate-200">
-                        Asesmen Akhir (Sumatif)
-                      </td>
-                      <td className="p-2.5 text-slate-800 border-r border-slate-200">
-                        {data.asesmenPembelajaran.asesmenAkhir.teknikDanInstrumen}
-                      </td>
-                      <td className="p-2.5 text-center text-slate-600 font-medium">
-                        {data.asesmenPembelajaran.asesmenAkhir.waktuPelaksanaan}
-                      </td>
-                    </tr>
+                    {[
+                      { key: 'asesmenAwal' as const, label: 'Asesmen Awal (Diagnostik)' },
+                      { key: 'asesmenProses' as const, label: 'Asesmen Proses (Formatif)' },
+                      { key: 'asesmenAkhir' as const, label: 'Asesmen Akhir (Sumatif)' },
+                    ].map((row, idx, arr) => (
+                      <tr
+                        key={row.key}
+                        className={idx < arr.length - 1 ? 'border-b border-slate-200' : ''}
+                      >
+                        <td className="p-2.5 font-bold bg-slate-50 text-slate-700 border-r border-slate-200 align-top">
+                          {row.label}
+                        </td>
+                        <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top">
+                          {isEditMode ? (
+                            <textarea
+                              rows={2}
+                              value={data.asesmenPembelajaran[row.key].teknikDanInstrumen}
+                              onChange={(e) =>
+                                handleAsesmenField(row.key, 'teknikDanInstrumen', e.target.value)
+                              }
+                              className={textareaClass}
+                            />
+                          ) : (
+                            data.asesmenPembelajaran[row.key].teknikDanInstrumen
+                          )}
+                        </td>
+                        <td className="p-2.5 text-center text-slate-600 font-medium align-top">
+                          {isEditMode ? (
+                            <textarea
+                              rows={2}
+                              value={data.asesmenPembelajaran[row.key].waktuPelaksanaan}
+                              onChange={(e) =>
+                                handleAsesmenField(row.key, 'waktuPelaksanaan', e.target.value)
+                              }
+                              className={textareaClass}
+                            />
+                          ) : (
+                            data.asesmenPembelajaran[row.key].waktuPelaksanaan
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -834,14 +1690,26 @@ ${data.pengalamanBelajar
               {/* Rubrik Penilaian 4 Tingkat */}
               {data.kustomisasi.tampilkanRubrikLengkap && (
                 <div className="avoid-break mt-4">
-                  <h4 className="text-xs font-bold text-slate-800 mb-2">
-                    Rubrik Penilaian Kompetensi Akuntansi:
-                  </h4>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-bold text-slate-800">
+                      Rubrik Penilaian Kompetensi:
+                    </h4>
+                    {isEditMode && (
+                      <button
+                        type="button"
+                        onClick={handleAddRubrik}
+                        className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Tambah Kriteria Rubrik</span>
+                      </button>
+                    )}
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs border border-slate-300 border-collapse">
                       <thead>
                         <tr className="bg-slate-100 text-slate-800 text-left border-b border-slate-300">
-                          <th className="p-2.5 w-1/4 border-r border-slate-300 font-bold">
+                          <th className="p-2.5 w-1/5 border-r border-slate-300 font-bold">
                             Kriteria / Indikator
                           </th>
                           <th className="p-2 border-r border-slate-300 font-bold text-emerald-800 bg-emerald-50/50">
@@ -856,26 +1724,94 @@ ${data.pengalamanBelajar
                           <th className="p-2 font-bold text-rose-800 bg-rose-50/50">
                             Perlu Bimbingan (1)
                           </th>
+                          {isEditMode && <th className="p-2 w-10 text-center">Aksi</th>}
                         </tr>
                       </thead>
                       <tbody>
                         {data.asesmenPembelajaran.rubrikPenilaian.map((rubrik, idx) => (
                           <tr key={idx} className="border-b border-slate-200 align-top">
-                            <td className="p-2.5 font-bold text-slate-800 bg-slate-50 border-r border-slate-200">
-                              {rubrik.kriteria}
+                            <td className="p-2 font-bold text-slate-800 bg-slate-50 border-r border-slate-200">
+                              {isEditMode ? (
+                                <textarea
+                                  rows={3}
+                                  value={rubrik.kriteria}
+                                  onChange={(e) =>
+                                    handleRubrikChange(idx, 'kriteria', e.target.value)
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                rubrik.kriteria
+                              )}
                             </td>
                             <td className="p-2 text-slate-700 border-r border-slate-200 leading-relaxed">
-                              {rubrik.sangatBaik}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={3}
+                                  value={rubrik.sangatBaik}
+                                  onChange={(e) =>
+                                    handleRubrikChange(idx, 'sangatBaik', e.target.value)
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                rubrik.sangatBaik
+                              )}
                             </td>
                             <td className="p-2 text-slate-700 border-r border-slate-200 leading-relaxed">
-                              {rubrik.baik}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={3}
+                                  value={rubrik.baik}
+                                  onChange={(e) =>
+                                    handleRubrikChange(idx, 'baik', e.target.value)
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                rubrik.baik
+                              )}
                             </td>
                             <td className="p-2 text-slate-700 border-r border-slate-200 leading-relaxed">
-                              {rubrik.cukup}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={3}
+                                  value={rubrik.cukup}
+                                  onChange={(e) =>
+                                    handleRubrikChange(idx, 'cukup', e.target.value)
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                rubrik.cukup
+                              )}
                             </td>
                             <td className="p-2 text-slate-700 leading-relaxed">
-                              {rubrik.perluBimbingan}
+                              {isEditMode ? (
+                                <textarea
+                                  rows={3}
+                                  value={rubrik.perluBimbingan}
+                                  onChange={(e) =>
+                                    handleRubrikChange(idx, 'perluBimbingan', e.target.value)
+                                  }
+                                  className={textareaClass}
+                                />
+                              ) : (
+                                rubrik.perluBimbingan
+                              )}
                             </td>
+                            {isEditMode && (
+                              <td className="p-2 text-center border-l border-slate-200">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveRubrik(idx)}
+                                  className="p-1 text-rose-500 hover:bg-rose-50 rounded"
+                                  title="Hapus baris rubrik"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -919,41 +1855,108 @@ ${data.pengalamanBelajar
                     <span className="text-[10px] font-bold tracking-widest text-blue-700 uppercase bg-blue-100 px-2 py-0.5 rounded-full">
                       Lembar Kerja Peserta Didik (LKPD)
                     </span>
-                    <h4 className="text-sm sm:text-base font-bold text-slate-900 mt-1">
-                      {data.lampiran.lkpd.judul}
-                    </h4>
-                    <p className="text-xs text-slate-500">
-                      Mata Pelajaran: {data.identitas.mataPelajaran} • Program Keahlian AKL
+                    {isEditMode ? (
+                      <input
+                        type="text"
+                        value={data.lampiran.lkpd.judul}
+                        onChange={(e) => handleLkpdChange('judul', e.target.value)}
+                        className={`${inputClass} mt-2 text-center font-bold`}
+                      />
+                    ) : (
+                      <h4 className="text-sm sm:text-base font-bold text-slate-900 mt-1">
+                        {data.lampiran.lkpd.judul}
+                      </h4>
+                    )}
+                    <p className="text-xs text-slate-500 mt-1">
+                      Mata Pelajaran: {data.identitas.mataPelajaran} • {data.identitas.faseKelasSemester}
                     </p>
                   </div>
 
                   {/* Petunjuk Pengerjaan */}
                   <div className="mb-4">
-                    <span className="text-xs font-bold text-slate-800 block mb-1">
-                      Petunjuk Pengerjaan:
-                    </span>
-                    <ol className="list-decimal pl-4 text-xs text-slate-700 space-y-1">
-                      {data.lampiran.lkpd.petunjukPengerjaan.map((petunjuk, i) => (
-                        <li key={i}>{petunjuk}</li>
-                      ))}
-                    </ol>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-slate-800">Petunjuk Pengerjaan:</span>
+                      {isEditMode && (
+                        <button
+                          type="button"
+                          onClick={() => handleLkpdListAdd('petunjukPengerjaan')}
+                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Tambah Petunjuk</span>
+                        </button>
+                      )}
+                    </div>
+                    {isEditMode ? (
+                      <div className="space-y-1.5">
+                        {data.lampiran.lkpd.petunjukPengerjaan.map((petunjuk, i) => (
+                          <div key={i} className="flex items-center space-x-1.5">
+                            <span className="text-xs font-bold text-slate-500 w-5 shrink-0">
+                              {i + 1}.
+                            </span>
+                            <input
+                              type="text"
+                              value={petunjuk}
+                              onChange={(e) =>
+                                handleLkpdListChange('petunjukPengerjaan', i, e.target.value)
+                              }
+                              className={inputClass}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleLkpdListRemove('petunjukPengerjaan', i)}
+                              className="p-1 text-rose-500 hover:bg-rose-50 rounded"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <ol className="list-decimal pl-4 text-xs text-slate-700 space-y-1">
+                        {data.lampiran.lkpd.petunjukPengerjaan.map((petunjuk, i) => (
+                          <li key={i}>{petunjuk}</li>
+                        ))}
+                      </ol>
+                    )}
                   </div>
 
                   {/* Dokumen Kasus Transaksi Riil */}
                   <div className="mb-4">
                     <span className="text-xs font-bold text-slate-800 block mb-1">
-                      Dokumen Bukti Transaksi Akuntansi (Kasus Nyata):
+                      Dokumen Kasus / Soal Praktikum Nyata:
                     </span>
-                    <div className="p-3 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-800 whitespace-pre-wrap leading-relaxed shadow-xs">
-                      {data.lampiran.lkpd.kasusTransaksi}
-                    </div>
+                    {isEditMode ? (
+                      <textarea
+                        rows={7}
+                        value={data.lampiran.lkpd.kasusTransaksi}
+                        onChange={(e) => handleLkpdChange('kasusTransaksi', e.target.value)}
+                        className={`${textareaClass} font-mono`}
+                      />
+                    ) : (
+                      <div className="p-3 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-800 whitespace-pre-wrap leading-relaxed shadow-xs">
+                        {data.lampiran.lkpd.kasusTransaksi}
+                      </div>
+                    )}
                   </div>
 
                   {/* Format Kolom Pengerjaan LKPD */}
                   <div className="mb-4">
-                    <span className="text-xs font-bold text-slate-800 block mb-1">
-                      Format Kertas Kerja Siswa:
-                    </span>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-slate-800">
+                        Format Kertas Kerja Siswa:
+                      </span>
+                      {isEditMode && (
+                        <button
+                          type="button"
+                          onClick={handleAddLkpdRow}
+                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Tambah Baris</span>
+                        </button>
+                      )}
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs border border-slate-400 border-collapse bg-white">
                         <thead>
@@ -963,9 +1966,25 @@ ${data.pengalamanBelajar
                                 key={idx}
                                 className="p-2 border border-slate-400 font-bold text-center"
                               >
-                                {col}
+                                {isEditMode ? (
+                                  <input
+                                    type="text"
+                                    value={col}
+                                    onChange={(e) =>
+                                      handleLkpdTableHeaderChange(idx, e.target.value)
+                                    }
+                                    className="w-full px-1.5 py-1 border border-amber-300 bg-white rounded text-xs font-bold text-center"
+                                  />
+                                ) : (
+                                  col
+                                )}
                               </th>
                             ))}
+                            {isEditMode && (
+                              <th className="p-2 border border-slate-400 w-10 text-center">
+                                Aksi
+                              </th>
+                            )}
                           </tr>
                         </thead>
                         <tbody>
@@ -980,11 +1999,34 @@ ${data.pengalamanBelajar
                               {row.map((cell, cIdx) => (
                                 <td
                                   key={cIdx}
-                                  className="p-2 border border-slate-400 text-slate-700 h-8"
+                                  className="p-1.5 border border-slate-400 text-slate-700 h-8"
                                 >
-                                  {cell}
+                                  {isEditMode ? (
+                                    <input
+                                      type="text"
+                                      value={cell}
+                                      onChange={(e) =>
+                                        handleLkpdTableCellChange(rIdx, cIdx, e.target.value)
+                                      }
+                                      className="w-full px-1.5 py-1 border border-amber-200 bg-amber-50/20 rounded text-xs"
+                                    />
+                                  ) : (
+                                    cell
+                                  )}
                                 </td>
                               ))}
+                              {isEditMode && (
+                                <td className="p-1.5 border border-slate-400 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveLkpdRow(rIdx)}
+                                    className="p-1 text-rose-500 hover:bg-rose-50 rounded"
+                                    title="Hapus baris"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -993,16 +2035,55 @@ ${data.pengalamanBelajar
                   </div>
 
                   {/* Soal Analisis Kritis */}
-                  {data.lampiran.lkpd.soalAnalisis?.length > 0 && (
+                  {(data.lampiran.lkpd.soalAnalisis?.length > 0 || isEditMode) && (
                     <div>
-                      <span className="text-xs font-bold text-slate-800 block mb-1">
-                        Pertanyaan Analisis & Penalaran Kritis:
-                      </span>
-                      <ol className="list-decimal pl-4 text-xs text-slate-700 space-y-1">
-                        {data.lampiran.lkpd.soalAnalisis.map((soal, i) => (
-                          <li key={i}>{soal}</li>
-                        ))}
-                      </ol>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-slate-800">
+                          Pertanyaan Analisis & Penalaran Kritis:
+                        </span>
+                        {isEditMode && (
+                          <button
+                            type="button"
+                            onClick={() => handleLkpdListAdd('soalAnalisis')}
+                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Tambah Soal</span>
+                          </button>
+                        )}
+                      </div>
+                      {isEditMode ? (
+                        <div className="space-y-1.5">
+                          {(data.lampiran.lkpd.soalAnalisis || []).map((soal, i) => (
+                            <div key={i} className="flex items-start space-x-1.5">
+                              <span className="text-xs font-bold text-slate-500 pt-1.5 w-5 shrink-0">
+                                {i + 1}.
+                              </span>
+                              <textarea
+                                rows={2}
+                                value={soal}
+                                onChange={(e) =>
+                                  handleLkpdListChange('soalAnalisis', i, e.target.value)
+                                }
+                                className={textareaClass}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleLkpdListRemove('soalAnalisis', i)}
+                                className="p-1 text-rose-500 hover:bg-rose-50 rounded mt-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <ol className="list-decimal pl-4 text-xs text-slate-700 space-y-1">
+                          {data.lampiran.lkpd.soalAnalisis.map((soal, i) => (
+                            <li key={i}>{soal}</li>
+                          ))}
+                        </ol>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1014,9 +2095,20 @@ ${data.pengalamanBelajar
                   <h4 className="text-xs font-bold text-slate-800 mb-1.5">
                     Bahan Bacaan & Ringkasan Konsep Materi:
                   </h4>
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
-                    {data.lampiran.bahanBacaanMateri}
-                  </div>
+                  {isEditMode ? (
+                    <textarea
+                      rows={6}
+                      value={data.lampiran.bahanBacaanMateri}
+                      onChange={(e) =>
+                        handleFieldChange('lampiran', 'bahanBacaanMateri', e.target.value)
+                      }
+                      className={textareaClass}
+                    />
+                  ) : (
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+                      {data.lampiran.bahanBacaanMateri}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1034,7 +2126,18 @@ ${data.pengalamanBelajar
                             Diferensiasi Konten
                           </td>
                           <td className="p-2.5 text-slate-800 leading-relaxed">
-                            {data.lampiran.diferensiasi.konten}
+                            {isEditMode ? (
+                              <textarea
+                                rows={2}
+                                value={data.lampiran.diferensiasi.konten}
+                                onChange={(e) =>
+                                  handleDiferensiasiChange('konten', e.target.value)
+                                }
+                                className={textareaClass}
+                              />
+                            ) : (
+                              data.lampiran.diferensiasi.konten
+                            )}
                           </td>
                         </tr>
                         <tr className="border-b border-slate-200">
@@ -1042,7 +2145,18 @@ ${data.pengalamanBelajar
                             Diferensiasi Proses
                           </td>
                           <td className="p-2.5 text-slate-800 leading-relaxed">
-                            {data.lampiran.diferensiasi.proses}
+                            {isEditMode ? (
+                              <textarea
+                                rows={2}
+                                value={data.lampiran.diferensiasi.proses}
+                                onChange={(e) =>
+                                  handleDiferensiasiChange('proses', e.target.value)
+                                }
+                                className={textareaClass}
+                              />
+                            ) : (
+                              data.lampiran.diferensiasi.proses
+                            )}
                           </td>
                         </tr>
                         <tr>
@@ -1050,7 +2164,18 @@ ${data.pengalamanBelajar
                             Diferensiasi Produk
                           </td>
                           <td className="p-2.5 text-slate-800 leading-relaxed">
-                            {data.lampiran.diferensiasi.produk}
+                            {isEditMode ? (
+                              <textarea
+                                rows={2}
+                                value={data.lampiran.diferensiasi.produk}
+                                onChange={(e) =>
+                                  handleDiferensiasiChange('produk', e.target.value)
+                                }
+                                className={textareaClass}
+                              />
+                            ) : (
+                              data.lampiran.diferensiasi.produk
+                            )}
                           </td>
                         </tr>
                       </tbody>
@@ -1067,21 +2192,89 @@ ${data.pengalamanBelajar
         {/* ========================================================= */}
         {data.kustomisasi.tampilkanPengesahan && (
           <div className="mt-10 pt-6 border-t border-slate-300 avoid-break">
-            <div className="grid grid-cols-2 gap-8 text-xs text-slate-800">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 text-xs text-slate-800">
               <div>
                 <p>Mengetahui,</p>
                 <p className="font-semibold">Kepala Sekolah</p>
-                <div className="h-20" />
-                <p className="font-bold underline uppercase">{data.pengesahan.namaKepalaSekolah}</p>
-                <p className="text-[11px] text-slate-600">NIP. {data.pengesahan.nipKepalaSekolah}</p>
+                <div className="h-16" />
+                {isEditMode ? (
+                  <div className="space-y-1.5 max-w-xs">
+                    <input
+                      type="text"
+                      value={data.pengesahan.namaKepalaSekolah}
+                      onChange={(e) =>
+                        handleFieldChange('pengesahan', 'namaKepalaSekolah', e.target.value)
+                      }
+                      placeholder="Nama Kepala Sekolah"
+                      className={inputClass}
+                    />
+                    <input
+                      type="text"
+                      value={data.pengesahan.nipKepalaSekolah}
+                      onChange={(e) =>
+                        handleFieldChange('pengesahan', 'nipKepalaSekolah', e.target.value)
+                      }
+                      placeholder="NIP Kepala Sekolah"
+                      className={inputClass}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <p className="font-bold underline uppercase">
+                      {data.pengesahan.namaKepalaSekolah}
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      NIP. {data.pengesahan.nipKepalaSekolah}
+                    </p>
+                  </>
+                )}
               </div>
 
               <div>
-                <p>{data.pengesahan.tempatTitimangsa}</p>
+                {isEditMode ? (
+                  <div className="mb-1 max-w-xs">
+                    <input
+                      type="text"
+                      value={data.pengesahan.tempatTitimangsa}
+                      onChange={(e) =>
+                        handleFieldChange('pengesahan', 'tempatTitimangsa', e.target.value)
+                      }
+                      placeholder="Tempat, Tanggal"
+                      className={inputClass}
+                    />
+                  </div>
+                ) : (
+                  <p>{data.pengesahan.tempatTitimangsa}</p>
+                )}
                 <p className="font-semibold">Guru Mata Pelajaran</p>
-                <div className="h-20" />
-                <p className="font-bold underline uppercase">{data.pengesahan.namaGuru}</p>
-                <p className="text-[11px] text-slate-600">NIP. {data.pengesahan.nipGuru}</p>
+                <div className="h-16" />
+                {isEditMode ? (
+                  <div className="space-y-1.5 max-w-xs">
+                    <input
+                      type="text"
+                      value={data.pengesahan.namaGuru}
+                      onChange={(e) =>
+                        handleFieldChange('pengesahan', 'namaGuru', e.target.value)
+                      }
+                      placeholder="Nama Guru"
+                      className={inputClass}
+                    />
+                    <input
+                      type="text"
+                      value={data.pengesahan.nipGuru}
+                      onChange={(e) =>
+                        handleFieldChange('pengesahan', 'nipGuru', e.target.value)
+                      }
+                      placeholder="NIP Guru"
+                      className={inputClass}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <p className="font-bold underline uppercase">{data.pengesahan.namaGuru}</p>
+                    <p className="text-[11px] text-slate-600">NIP. {data.pengesahan.nipGuru}</p>
+                  </>
+                )}
               </div>
             </div>
           </div>
