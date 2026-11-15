@@ -16,16 +16,21 @@ const ENV_PORT = process.env.PORT ? Number(process.env.PORT) : null;
 
 app.use(express.json({ limit: '25mb' }));
 
-// Server-side GoogleGenAI client
-const apiKey = process.env.GEMINI_API_KEY || '';
-const ai = new GoogleGenAI({
-  apiKey: apiKey,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
+// Lazy server-side GoogleGenAI client
+function getAiClient() {
+  const currentKey = process.env.GEMINI_API_KEY;
+  if (!currentKey || currentKey === 'MY_GEMINI_API_KEY' || currentKey.trim() === '') {
+    throw new Error('GEMINI_API_KEY is not configured in environment');
+  }
+  return new GoogleGenAI({
+    apiKey: currentKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
     },
-  },
-});
+  });
+}
 
 // Robust Gemini generation with timeout & fallback for high-demand spikes
 async function generateWithRetryAndFallback(params: {
@@ -33,10 +38,7 @@ async function generateWithRetryAndFallback(params: {
   systemInstruction?: string;
   responseMimeType?: string;
 }) {
-  const currentKey = process.env.GEMINI_API_KEY;
-  if (!currentKey || currentKey === 'MY_GEMINI_API_KEY' || currentKey.trim() === '') {
-    throw new Error('GEMINI_API_KEY is not configured in environment');
-  }
+  const ai = getAiClient();
 
   // Use only valid models from gemini-api skill: gemini-3.8-flash as primary, gemini-2.5-flash as secondary
   const models = ['gemini-3.8-flash', 'gemini-2.5-flash'];
@@ -439,33 +441,54 @@ Kembalikan JSON dengan format:
   }
 });
 
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', port: DEV_PORT });
+});
+
 // Vite middleware in dev or static files in production
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (req, res) => {
+    app.get('*', (_req, res) => {
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   } else {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR !== 'true',
+        watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
   // Always listen on port 3000 for AI Studio iframe dev server
-  app.listen(DEV_PORT, '0.0.0.0', () => {
+  const primaryServer = app.listen(DEV_PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${DEV_PORT}`);
   });
+  primaryServer.on('error', (err: any) => {
+    console.error(`Failed to bind primary port ${DEV_PORT}:`, err?.message || err);
+  });
 
-  // Also listen on ENV_PORT if specified (e.g. 8080 on Cloud Run)
+  // Also listen on ENV_PORT if specified and not already occupied (e.g. nginx on 8080)
   if (ENV_PORT && ENV_PORT !== DEV_PORT) {
-    app.listen(ENV_PORT, '0.0.0.0', () => {
+    const secondaryServer = app.listen(ENV_PORT, '0.0.0.0', () => {
       console.log(`Server also running on port ${ENV_PORT}`);
+    });
+    secondaryServer.on('error', (err: any) => {
+      if (err?.code === 'EADDRINUSE') {
+        console.log(`Port ${ENV_PORT} already in use (e.g. proxy), serving on port ${DEV_PORT}.`);
+      } else {
+        console.warn(`Secondary port ${ENV_PORT} notice:`, err?.message || err);
+      }
     });
   }
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Fatal error starting server:', err);
+  process.exit(1);
+});
